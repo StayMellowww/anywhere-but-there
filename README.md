@@ -34,6 +34,8 @@ Multiplayer uses PeerJS and WebRTC. The host owns the board and must keep the ta
 
 Restaurant data is copyright OpenStreetMap contributors. Images, where available, link to their Wikimedia Commons attribution and license.
 
-## Deploy
+## Deployment
 
-For Cloudflare Pages Git integration, use `npm run build` as the build command and `dist` as the output directory. No application secrets are required.
+Anywhere But There is deployed on Cloudflare Workers, with GitHub integration building and publishing the Vite app when changes are pushed to the production branch.
+
+**Live app:** [anywhere-but-there.mellowstudios.workers.dev](https://anywhere-but-there.mellowstudios.workers.dev/)
