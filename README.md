@@ -19,7 +19,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. To run tests and create a production build:
+Open the local URL printed by Vite. Solo play works in Vite; multiplayer requires the Cloudflare Worker runtime. To run tests and create a production build:
 
 ```sh
 node --test --test-isolation=none test/*.test.js
@@ -30,7 +30,7 @@ npm run build
 
 The React and Vite frontend retrieves restaurant data from OpenStreetMap through Overpass and resolves typed locations through Nominatim. Questions use available tags, which can be incomplete or outdated. Dietary information does not confirm allergen safety; check directly with the restaurant. Ratings and live open status are not provided.
 
-Multiplayer uses PeerJS and WebRTC. The host owns the board and must keep the tab open. A strict majority of received votes determines each answer; ties count as no. The host can skip a question or proceed with votes received so far. Public data and signaling services can be unavailable or rate-limited.
+Multiplayer uses WebSockets and Cloudflare Durable Objects. The host owns the board and must keep the tab open. A strict majority of received votes determines each answer; ties count as no. The host can skip a question or proceed with votes received so far. Public data and room services can be unavailable or rate-limited. Rooms support up to eight players and expire after one hour.
 
 Restaurant data is copyright OpenStreetMap contributors. Images, where available, link to their Wikimedia Commons attribution and license.
 

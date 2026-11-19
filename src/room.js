@@ -25,3 +25,10 @@ export function groupAnswer(answers) {
   const values = Object.values(answers);
   return values.filter(Boolean).length > values.length / 2;
 }
+
+export function roomConnectionError(type) {
+  if (type === 'peer-unavailable') return 'Room not found. Check the code and make sure the host has the room open.';
+  if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) return 'Could not connect to the room service. Check your internet connection and try again.';
+  if (type === 'browser-incompatible') return 'This browser cannot connect to the room. Try an up-to-date browser.';
+  return 'Could not connect to the host. Try the same Wi-Fi or a different network, then try again.';
+}

@@ -2,9 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { findPlace, findRestaurants } from './data';
 import { applyAnswer, priceBand, questionsFor, showdownFor } from './traits';
-import Peer from 'peerjs';
 import QRCode from 'qrcode';
-import { groupAnswer, inviteUrl, makeRoomCode, readInviteCode, roomPeerId } from './room';
+import { groupAnswer, inviteUrl, makeRoomCode, readInviteCode } from './room';
 import './style.css';
 
 function App() {
@@ -38,9 +37,8 @@ function App() {
   const requestRef = useRef(null);
   const gameRef = useRef(null);
   const resultsRef = useRef(null);
-  const peerRef = useRef(null);
-  const connectionsRef = useRef(new Map());
-  const hostConnectionRef = useRef(null);
+  const socketRef = useRef(null);
+  const guestsRef = useRef(new Set());
   const snapshotRef = useRef(null);
   const currentQuestionRef = useRef('');
   const guestBoardRef = useRef(false);
@@ -58,16 +56,15 @@ function App() {
   snapshotRef.current = { type: 'state', restaurants, label, eliminated: [...eliminated], dimmed: [...dimmed], asked: [...asked], noCount, seconds, playing, showdownEnabled, timerEnabled, history, revision, voteCount: votes.key === question?.key ? Object.keys(votes.answers).length : 0, guestCount };
 
   useEffect(() => {
-    if (!timerEnabled || !playing || finished || seconds === 0 || roomRole === 'guest') return;
+    if (!timerEnabled || !playing || finished || seconds === 0) return;
     const timer = setInterval(() => setSeconds(value => Math.max(0, value - 1)), 1000);
     return () => clearInterval(timer);
   }, [playing, finished, seconds, roomRole, timerEnabled]);
 
   useEffect(() => {
-    if (roomRole !== 'host') return;
-    const message = snapshotRef.current;
-    for (const connection of connectionsRef.current.values()) if (connection.open) connection.send(message);
-  }, [roomRole, restaurants, label, eliminated, dimmed, asked, noCount, seconds, playing, showdownEnabled, timerEnabled, history, revision, votes, guestCount]);
+    if (roomRole !== 'host' || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify(snapshotRef.current));
+  }, [roomRole, restaurants, label, eliminated, dimmed, asked, noCount, playing, showdownEnabled, timerEnabled, history, revision, votes, guestCount]);
 
   useEffect(() => {
     if (roomRole !== 'host' || !question || finished || votes.key !== question.key) return;
@@ -76,7 +73,7 @@ function App() {
     setVotes({ key: '', answers: {} });
   }, [roomRole, question?.key, finished, votes, guestCount]);
 
-  useEffect(() => () => peerRef.current?.destroy(), []);
+  useEffect(() => () => socketRef.current?.close(), []);
 
   useEffect(() => {
     if (!roomInvite) { setQrImage(''); return; }
@@ -106,39 +103,52 @@ function App() {
 
   function leaveRoom() {
     if (roomRole === 'guest') { setRestaurants([]); setPlaying(false); }
-    for (const connection of connectionsRef.current.values()) connection.close();
-    connectionsRef.current.clear();
-    hostConnectionRef.current?.close(); hostConnectionRef.current = null;
-    peerRef.current?.destroy(); peerRef.current = null;
+    const socket = socketRef.current; socketRef.current = null; socket?.close();
+    guestsRef.current.clear();
     setRoomRole('solo'); setRoomCode(''); setRoomStatus(''); setGuestCount(0); setVotes({ key: '', answers: {} }); setVotedKey('');
   }
 
-  function attachGuest(connection) {
-    connection.on('open', () => {
-      connectionsRef.current.set(connection.peer, connection);
-      setGuestCount(connectionsRef.current.size);
-      connection.send(snapshotRef.current);
-    });
-    connection.on('data', message => {
-      if (message?.type !== 'vote' || typeof message.yes !== 'boolean' || typeof message.key !== 'string') return;
-      if (message.key !== currentQuestionRef.current) return;
-      setVotes(current => ({ key: message.key, answers: { ...(current.key === message.key ? current.answers : {}), [connection.peer]: message.yes } }));
-    });
-    connection.on('close', () => {
-      connectionsRef.current.delete(connection.peer);
-      setGuestCount(connectionsRef.current.size);
-      setVotes(current => { const answers = { ...current.answers }; delete answers[connection.peer]; return { ...current, answers }; });
-    });
+  function connectRoom(code, role) {
+    const url = new URL(`/api/rooms/${code}`, window.location.href);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.searchParams.set('role', role);
+    const socket = new WebSocket(url);
+    socketRef.current = socket;
+    let ready = false;
+    const timer = setTimeout(() => { if (socketRef.current === socket && !ready) { socketRef.current = null; socket.close(); setRoomStatus('Connection timed out. Please try again.'); } }, 15000);
+    socket.onmessage = event => {
+      if (socketRef.current !== socket) return;
+      let message; try { message = JSON.parse(event.data); } catch { return; }
+      if (message.type === 'ready') {
+        ready = true; clearTimeout(timer); setRoomRole(role); setRoomCode(code);
+        setRoomStatus(role === 'host' ? 'Room ready. Share the code with friends.' : 'Connected. Waiting for the host to deal the cards.');
+      } else if (role === 'host' && message.type === 'guest-joined') {
+        guestsRef.current.add(message.id); setGuestCount(guestsRef.current.size);
+        socket.send(JSON.stringify(snapshotRef.current));
+      } else if (role === 'host' && message.type === 'guest-left') {
+        guestsRef.current.delete(message.id); setGuestCount(guestsRef.current.size);
+        setVotes(current => { const answers = { ...current.answers }; delete answers[message.id]; return { ...current, answers }; });
+      } else if (role === 'host' && message.type === 'vote' && message.key === currentQuestionRef.current && typeof message.yes === 'boolean') {
+        setVotes(current => ({ key: message.key, answers: { ...(current.key === message.key ? current.answers : {}), [message.id]: message.yes } }));
+      } else if (role === 'guest' && message.type === 'state' && Array.isArray(message.restaurants)) {
+        setRestaurants(message.restaurants); setLabel(message.label); setEliminated(new Set(message.eliminated)); setDimmed(new Set(message.dimmed)); setAsked(new Set(message.asked)); setNoCount(message.noCount); setSeconds(message.seconds); setPlaying(message.playing); setShowdownEnabled(Boolean(message.showdownEnabled)); setTimerEnabled(message.timerEnabled !== false); setHistory(message.history || []); setRevision(message.revision || 0); setGuestCount(message.guestCount || 0); setVotes({ key: 'remote', answers: { count: message.voteCount || 0 } });
+        if (message.restaurants.length) setRoomStatus('Playing with the host.');
+        if (message.restaurants.length && !guestBoardRef.current) { guestBoardRef.current = true; setDealId(value => value + 1); }
+      }
+    };
+    socket.onclose = () => {
+      clearTimeout(timer);
+      if (socketRef.current !== socket) return;
+      socketRef.current = null; guestsRef.current.clear(); setGuestCount(0); setRoomRole('solo');
+      setRoomStatus(ready ? 'Room disconnected or expired. Create or join a new room.' : 'Could not join or create the room. Check the code, or try again if the room is full or the service is busy.');
+    };
+    socket.onerror = () => {};
   }
 
   function createRoom() {
     leaveRoom();
-    const code = makeRoomCode();
-    const peer = new Peer(roomPeerId(code));
-    peerRef.current = peer; setRoomStatus('Creating room…');
-    peer.on('open', () => { setRoomRole('host'); setRoomCode(code); setRoomStatus('Room ready. Share the code with friends.'); });
-    peer.on('connection', attachGuest);
-    peer.on('error', error => { setRoomStatus(error.type === 'unavailable-id' ? 'That code is taken. Create another room.' : 'Could not create the room. Try again.'); peer.destroy(); peerRef.current = null; });
+    setRoomStatus('Creating room...');
+    connectRoom(makeRoomCode(), 'host');
   }
 
   async function copyInvite() {
@@ -156,25 +166,9 @@ function App() {
     event.preventDefault();
     const code = joinCode.trim().toUpperCase();
     if (!/^[A-Z]{4}$/.test(code)) { setRoomStatus('Enter a four-letter room code.'); return; }
-    leaveRoom();
-    guestBoardRef.current = false;
-    const peer = new Peer();
-    peerRef.current = peer; setRoomStatus('Connecting to room…');
-    const timer = setTimeout(() => { if (hostConnectionRef.current?.open) return; setRoomStatus('Could not reach the host. Check the code and try again.'); peer.destroy(); }, 15000);
-    peer.on('open', () => {
-      const connection = peer.connect(roomPeerId(code), { reliable: true });
-      hostConnectionRef.current = connection;
-      connection.on('open', () => { clearTimeout(timer); setRoomRole('guest'); setRoomCode(code); setRoomStatus('Connected. Waiting for the host to deal the cards.'); });
-      connection.on('data', message => {
-        if (message?.type !== 'state' || !Array.isArray(message.restaurants)) return;
-        setRestaurants(message.restaurants); setLabel(message.label); setEliminated(new Set(message.eliminated)); setDimmed(new Set(message.dimmed)); setAsked(new Set(message.asked)); setNoCount(message.noCount); setSeconds(message.seconds); setPlaying(message.playing); setShowdownEnabled(Boolean(message.showdownEnabled)); setTimerEnabled(message.timerEnabled !== false); setHistory(message.history || []); setRevision(message.revision || 0); setGuestCount(message.guestCount || 0); setVotes({ key: 'remote', answers: { count: message.voteCount || 0 } });
-        if (message.restaurants.length) setRoomStatus('Playing with the host.');
-        if (message.restaurants.length && !guestBoardRef.current) { guestBoardRef.current = true; setDealId(value => value + 1); }
-      });
-      connection.on('close', () => { clearTimeout(timer); setRoomStatus('Host disconnected. The room has ended.'); setRoomRole('solo'); });
-      connection.on('error', () => { clearTimeout(timer); setRoomStatus('Connection failed. Check the code and try again.'); });
-    });
-    peer.on('error', () => { clearTimeout(timer); setRoomStatus('Could not join that room. Check the code and try again.'); });
+    leaveRoom(); guestBoardRef.current = false;
+    setRoomStatus('Connecting to room...');
+    connectRoom(code, 'guest');
   }
 
   async function load(lat, lon, placeLabel, signal) {
@@ -233,7 +227,7 @@ function App() {
     if (!question || votedKey === `${revision}:${question.key}` && roomRole === 'guest') return;
     if (roomRole === 'solo') { resolveAnswer(wantsYes); return; }
     if (roomRole === 'host') setVotes(current => ({ key: question.key, answers: { ...(current.key === question.key ? current.answers : {}), host: wantsYes } }));
-    else { hostConnectionRef.current?.send({ type: 'vote', key: question.key, yes: wantsYes }); setVotedKey(`${revision}:${question.key}`); }
+    else { if (socketRef.current?.readyState !== WebSocket.OPEN) { setRoomStatus('Disconnected. Please rejoin the room.'); return; } socketRef.current.send(JSON.stringify({ type: 'vote', key: question.key, yes: wantsYes })); setVotedKey(`${revision}:${question.key}`); }
   }
   function skipQuestion() {
     if (!question || roomRole === 'guest') return;

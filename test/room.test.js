@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupAnswer, inviteUrl, makeRoomCode, readInviteCode, roomPeerId } from '../src/room.js';
+import { groupAnswer, inviteUrl, makeRoomCode, readInviteCode, roomPeerId, roomConnectionError } from '../src/room.js';
 
 test('room code is four readable letters and maps to a stable peer ID', () => {
   const code = makeRoomCode(new Uint8Array([0, 1, 2, 3]));
@@ -18,4 +18,11 @@ test('invite link fills a valid room code and discards unrelated query state', (
   assert.equal(link, 'https://example.com/play?room=ABCD');
   assert.equal(readInviteCode(new URL(link).search), 'ABCD');
   assert.equal(readInviteCode('?room=A1CD'), '');
+});
+
+
+test('connection errors distinguish missing rooms from network failures', () => {
+  assert.match(roomConnectionError('peer-unavailable'), /Room not found/);
+  assert.match(roomConnectionError('network'), /room service/);
+  assert.match(roomConnectionError(), /different network/);
 });
