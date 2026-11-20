@@ -55,7 +55,7 @@ export function questionsFor(restaurants, answers = []) {
     if (count && !answers.some(a => a.key === `group:${group}`)) candidates.push({ key: `group:${group}`, question: `In the mood for ${group}?`, priority: -1, strictYes: true, known: t => Boolean(t.cuisine), match: t => cuisineValues(t).some(c => members.includes(c)) });
   }
   for (const [cuisine, count] of cuisines) {
-    if (CUISINE_GROUPS.Mexican.includes(cuisine)) continue;
+    if (CUISINE_GROUPS.Mexican.includes(cuisine) || cuisine === 'asian') continue;
     candidates.push({ key: `cuisine:${cuisine}`, question: `In the mood for ${cuisine}?`, priority: 0, cuisineCount: count, commonCuisine: commonCuisines.has(cuisine), strictYes: true, known: t => Boolean(t.cuisine) || (cuisine === 'cafe' && Boolean(t.amenity)), match: t => (cuisine === 'cafe' && t.amenity === 'cafe') || (t.cuisine || '').split(/[;,]/).some(v => v.trim().toLowerCase().replaceAll('_', ' ') === cuisine) });
   }
   return candidates.map(feature => {

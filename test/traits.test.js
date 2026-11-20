@@ -135,3 +135,19 @@ test('Mexican and Tex-Mex use one combined question', () => {
   assert.deepEqual([...applyAnswer(rows, new Set(), group, false).eliminated], ['a', 'b']);
   assert.ok(!questions.some(q => ['cuisine:mexican', 'cuisine:tex-mex'].includes(q.key)));
 });
+
+
+test('Asian group covers generic Asian tags without repeating the question, while keeping specific cuisines', () => {
+  const rows = [{ id: 'a', tags: { cuisine: 'asian' } }, { id: 'b', tags: { cuisine: 'chinese' } }, { id: 'c', tags: { cuisine: 'sushi' } }];
+  const first = questionsFor(rows);
+  const group = first.find(q => q.key === 'group:Asian');
+  assert.ok(group);
+  assert.ok(!first.some(q => q.key === 'cuisine:asian'));
+  const yes = applyAnswer(rows, new Set(), group, true);
+  assert.equal(yes.eliminated.size, 0);
+  const next = questionsFor(rows, [{ key: 'group:Asian', answer: 'Yes' }]);
+  assert.ok(!next.some(q => q.key === 'group:Asian' || q.key === 'cuisine:asian'));
+  assert.ok(next.some(q => q.key === 'cuisine:chinese'));
+  assert.ok(next.some(q => q.key === 'cuisine:sushi'));
+  assert.equal(applyAnswer(rows, new Set(), group, false).eliminated.size, 3);
+});
