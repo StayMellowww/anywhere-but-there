@@ -3,14 +3,15 @@ import { createRoot } from 'react-dom/client';
 import { findPlace, findRestaurants } from './data';
 import { applyAnswer, priceBand, questionsFor, showdownFor } from './traits';
 import QRCode from 'qrcode';
-import bistroPhoto from '../Example Images/bistro.jpg';
-import ramenPhoto from '../Example Images/ramen shop.jpg';
-import pizzaPhoto from '../Example Images/pizza place.jpg';
+import { Burst, Friends } from './ArcadeArt';
+import { Masthead, Welcome, GamePreview } from './Welcome';
 import { groupAnswer, inviteUrl, makeRoomCode, readInviteCode } from './room';
 import './style.css';
 
 function App() {
   const [location, setLocation] = useState('');
+  const [searchStatus, setSearchStatus] = useState('');
+  const placeInput = useRef(null);
   const [radius, setRadius] = useState(2);
   const [showdownEnabled, setShowdownEnabled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -29,6 +30,7 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [roomRole, setRoomRole] = useState('solo');
   const [roomCode, setRoomCode] = useState('');
+  const [joinExpanded, setJoinExpanded] = useState(() => Boolean(readInviteCode(window.location.search)));
   const [joinCode, setJoinCode] = useState(() => readInviteCode(window.location.search));
   const [roomStatus, setRoomStatus] = useState(() => readInviteCode(window.location.search) ? 'Room code filled from invite. Tap Join.' : '');
   const [qrImage, setQrImage] = useState('');
@@ -96,7 +98,7 @@ function App() {
   useEffect(() => {
     if (!dealId) return;
     gameRef.current?.focus({ preventScroll: true });
-    gameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    gameRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   }, [dealId]);
 
   useEffect(() => {
@@ -109,7 +111,7 @@ function App() {
   useEffect(() => {
     if (!showResults) return;
     resultsRef.current?.focus({ preventScroll: true });
-    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    resultsRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   }, [showResults, dealId]);
 
   function leaveRoom() {
@@ -183,6 +185,7 @@ function App() {
   }
 
   async function load(lat, lon, placeLabel, signal) {
+    setSearchStatus('Finding restaurants…');
     const items = await findRestaurants(lat, lon, radius * 1609.344, signal);
     if (signal.aborted) return;
     if (!items.length) throw new Error('No named food spots found here. Try a larger radius or another location.');
@@ -190,6 +193,7 @@ function App() {
   }
   async function beginSearch(resolvePlace) {
     const controller = new AbortController();
+    requestRef.current?.abort();
     requestRef.current = controller; setBusy(true); setError('');
     try {
       const place = await resolvePlace(controller.signal);
@@ -202,18 +206,34 @@ function App() {
   }
   async function search(event) {
     event.preventDefault();
-    if (!location.trim()) return;
+    if (!location.trim()) { placeInput.current?.focus(); return; }
+    setSearchStatus('Finding that location…');
     await beginSearch(signal => findPlace(location.trim(), signal));
   }
+
   function useGps() {
-    if (!navigator.geolocation) { setError('Your browser does not support location. Enter a city or ZIP code.'); return; }
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setError('Location access is unavailable here. Enter a city, address, or ZIP code.');
+      placeInput.current?.focus();
+      return;
+    }
+    setSearchStatus('Getting your location…');
     beginSearch(() => new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(
       position => resolve({ lat: position.coords.latitude, lon: position.coords.longitude, label: 'Near you' }),
-      () => reject(new Error('Location was unavailable. Enter a city or ZIP code instead.')),
-      { timeout: 12000 }
+      error => reject(new Error(({
+        1: 'Location access was denied.',
+        3: 'Your location request timed out.'
+      }[error.code] || 'Your device could not find your location.') + ' Enter a city, address, or ZIP code, or try Near me again.')),
+      { timeout: 12000, maximumAge: 60000 }
     )));
   }
-  function cancelSearch() { requestRef.current?.abort(); }
+
+  function cancelSearch() {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setBusy(false);
+    setError('Search cancelled.');
+  }
   function resolveAnswer(wantsYes) {
     if (!question) return;
     const details = Object.fromEntries(finalists.map(r => [r.id, question.noPreference && !wantsYes ? 'No requirement' : question.known ? (!question.known(r.tags, r) ? 'Unknown' : question.match(r.tags, r) === wantsYes ? 'Matches' : 'Does not match') : 'Selected']));
@@ -261,21 +281,44 @@ function App() {
       if (error.name !== 'AbortError') setShareStatus('Could not share results on this device.');
     }
   }
-  return <main className="app">
-    <header><div className="brand"><span className="brand-name">ANYWHERE<br/><b>BUT THERE</b></span></div><span className="edition">THE RESTAURANT ELIMINATION GAME</span><div className="header-sky" aria-hidden="true"><span className="header-cloud hc-one"></span><span className="header-cloud hc-two"></span><span className="header-cloud hc-three"></span><span className="header-stars hs-one">✦</span><span className="header-stars hs-two">✦</span><span className="header-stars hs-three">✦</span><span className="header-stars hs-four">✦</span></div></header>
-    <section className="intro"><div className="intro-copy"><h1>Can’t <span className="decide-word">decide<span className="hero-sparks" aria-hidden="true"><i></i><i></i><i></i></span></span><br/><em>where to eat?</em></h1><p>Answer questions, flip the maybes, and land on a spot everyone’s <span className="squiggle-word">actually<img className="hero-squiggle" src="/arcade-squiggle.png" alt=""/></span> hungry for.</p></div><div className="arcade-scene" aria-hidden="true"><span className="pixel-cloud cloud-one"></span><span className="pixel-cloud cloud-two"></span><span className="pixel-cloud cloud-three"></span><span className="pixel-stars ps-one">✦</span><span className="pixel-stars ps-two">✦</span><span className="pixel-stars ps-three">✦</span><span className="pixel-stars ps-four">✦</span><span className="neon-arrow">⤴</span><img className="arcade-background" src="/arcade-diner.png" alt=""/><div className="hero-deck"><div className="deck-back"><img src="/arcade-cloche.png" alt=""/></div><div className="deck-front"><div className="hero-food"><img src={bistroPhoto} alt="" /></div><b>The Corner<br/>Bistro</b></div></div></div></section>
-    <section className="room-panel" aria-label="Multiplayer room"><div><p className="eyebrow">BRING YOUR PEOPLE</p><h2>{roomRole === 'solo' ? 'Make it a group decision.' : `Room ${roomCode}`}</h2><p>{roomRole === 'host' ? `You’re hosting with ${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}. Keep this tab open.` : roomRole === 'guest' ? 'Your answers go to the host. Everyone sees the same board.' : 'Create a room, then share its four-letter code. The host chooses the location.'}</p></div>{roomRole === 'solo' ? <div className="room-actions"><button onClick={createRoom}>Create room</button><form onSubmit={joinRoom}><input aria-label="Four-letter room code" maxLength={4} value={joinCode} onChange={event => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z]/g, ''))} placeholder="CODE"/><button type="submit">Join</button></form></div> : <div className="room-actions"><strong className="room-code">{roomCode}</strong><button onClick={leaveRoom}>Leave room</button></div>}{roomStatus && <p className="room-status" role="status">{roomStatus}</p>}{roomRole === 'host' && <div className="room-invite"><div className="invite-copy"><label htmlFor="invite-link">Invite link</label><input id="invite-link" readOnly value={roomInvite} onFocus={event => event.target.select()}/><div><button onClick={copyInvite}>Copy link</button><button onClick={shareInvite}>Share link</button></div>{localInvite && <p>Localhost links only work on this computer. Use a hosted app URL or your computer’s LAN address for another device.</p>}</div>{qrImage && <img src={qrImage} alt={`QR code to join room ${roomCode}`} width="160" height="160"/>}</div>}</section>
-    {roomRole !== 'guest' && <form onSubmit={search} className="search"><label htmlFor="place">First things first. Where are you?</label><div className="search-row"><input id="place" value={location} onChange={e => setLocation(e.target.value)} placeholder="City, state, or ZIP code"/><button type="submit" disabled={busy}>{busy ? 'Loading…' : 'Find my spots →'}</button>{busy && <button type="button" className="cancel-button" onClick={cancelSearch}>Cancel</button>}</div><div className="controls"><button type="button" className="text-button" onClick={useGps} disabled={busy}>◎ Use my location</button><label>Within <select value={radius} onChange={e => setRadius(Number(e.target.value))}><option value="1">1 mile</option><option value="2">2 miles</option><option value="5">5 miles</option><option value="10">10 miles</option></select></label></div><div className="game-options"><label><input type="checkbox" checked={showdownEnabled} onChange={e => setShowdownEnabled(e.target.checked)} disabled={restaurants.length > 0}/> Head-to-head finale</label><label><input type="checkbox" checked={timerEnabled} onChange={e => setTimerEnabled(e.target.checked)} disabled={restaurants.length > 0}/> Show timer</label><label><input type="checkbox" checked={soundEnabled} onChange={e => setSoundEnabled(e.target.checked)}/> Flip sounds</label></div></form>}
-    {error && <p className="error" role="alert">{error}</p>}
-    {!restaurants.length && <section className="demo-game" aria-label="How the game works"><div className="demo-top"><span className="corner-pixels" aria-hidden="true"></span><span className="demo-label"><img src="/arcade-controller.png" alt=""/>THE GAME</span><div className="demo-steps"><span><b>1</b> Find nearby spots</span><span><b>2</b> Answer questions to flip cards</span><span><b>3</b> Choose from the finalists</span></div></div><div className="demo-content"><div className="demo-copy"><strong>Round 1</strong><p>Answer questions to narrow the board.</p><small>EXAMPLE GAME</small><img className="mascot mascot-fries" src="/arcade-fries.png" alt=""/></div><div className="demo-cards"><div className="demo-card demo-back"><img src="/arcade-cloche.png" alt=""/></div><div className="demo-card"><div className="demo-image"><img src={ramenPhoto} alt="A bowl of ramen with egg and dumplings" /></div><b>Lucky Noodle</b></div><div className="demo-card"><div className="demo-image"><img src={pizzaPhoto} alt="A pizza topped with cheese and basil" /></div><b>Woodfire Kitchen</b></div><div className="demo-card demo-back"><img src="/arcade-cloche.png" alt=""/></div></div><img className="mascot mascot-drink" src="/arcade-drink.png" alt=""/></div></section>}
-    {restaurants.length > 0 && <section className="game" ref={gameRef} tabIndex={-1} aria-label="Restaurant game board"><div className="game-top"><div><p className="eyebrow">{label} · {restaurants.length} CARDS DEALT</p><h2>{showResults ? 'Your finalists' : 'The board is shrinking'}</h2></div>{timerEnabled && <div className="timer">{seconds === 0 && !finished ? 'OVERTIME' : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`}</div>}</div>
-      {!finished && question && <div className="prompt"><span>{showdown ? 'FINAL SHOWDOWN' : 'THE NEXT QUESTION'}</span><strong>{question.question}</strong>{(roomRole === 'guest' && votedKey === `${revision}:${question.key}` || roomRole === 'host' && votes.key === question.key && Object.hasOwn(votes.answers, 'host')) ? <p className="vote-wait">Vote in. Waiting for everyone else…</p> : <div><button onClick={() => answer(true)}>{showdown ? showdown.first.name : lastChance ? 'Yes, show me' : 'Yes, please'}</button><button onClick={() => answer(false)} className="secondary">{showdown ? showdown.second.name : lastChance ? 'Nope, none' : 'No thanks'}</button></div>}{roomRole !== 'solo' && <small className="prompt-note">{roomRole === 'host' ? Object.keys(votes.key === question.key ? votes.answers : {}).length : (votes.answers.count || 0)} of {guestCount + 1} votes received{roomRole === 'host' ? ' - ties count as no' : ''}</small>}{roomRole !== 'guest' && <div><button type="button" className="secondary" onClick={skipQuestion}>Skip</button><button type="button" className="secondary" disabled={!history.length} onClick={undo}>Undo</button>{roomRole === 'host' && votes.key === question.key && Object.keys(votes.answers).length > 0 && <button type="button" className="secondary" onClick={() => { resolveAnswer(groupAnswer(votes.answers)); setVotes({ key: '', answers: {} }); }}>Use votes so far</button>}</div>}{question.key.startsWith('diet:') && <small className="prompt-note">Listed options do not confirm allergen safety. Check with the restaurant.</small>}{question.key === 'price' && <small className="prompt-note">Price tags are estimates and may be outdated.</small>}</div>}
+  return <div className="app" id="top">
+    <a className="skip-link" href="#play">Skip to game controls</a>
+    <Masthead/>
+    <main className="app-content">
+    <Welcome/>
+    <div className="setup" id="play" tabIndex={-1}>
+    {roomRole !== 'guest' && <form onSubmit={search} className="search">
+      <div className="search-row">
+        <div className="search-entry">
+          <button type="button" className="gps" onClick={useGps} disabled={busy}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-8 8-13a8 8 0 1 0-16 0c0 5 8 13 8 13Z"/><circle cx="12" cy="9" r="2.6"/></svg>Near me
+          </button>
+          <label className="sr-only" htmlFor="place">City, address, or ZIP code</label>
+          <input id="place" required ref={placeInput} value={location} onChange={event => setLocation(event.target.value)} placeholder="City, address, or ZIP code" disabled={busy}/>
+        </div>
+        <button className="find" type="submit" disabled={busy}><Burst/>Find my spots <span aria-hidden="true">→</span></button>
+      </div>
+      {busy && <div className="search-progress"><span role="status">{searchStatus}</span><button type="button" onClick={cancelSearch}>Cancel</button></div>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <details className="settings"><summary>Game settings · {radius} {radius === 1 ? 'mile' : 'miles'}</summary>
+<div className="search-options"><div className="controls"><label>Within <select disabled={busy} value={radius} onChange={e => setRadius(Number(e.target.value))}><option value="1">1 mile</option><option value="2">2 miles</option><option value="5">5 miles</option><option value="10">10 miles</option></select></label></div><div className="game-options"><label><input type="checkbox" checked={showdownEnabled} onChange={e => setShowdownEnabled(e.target.checked)} disabled={restaurants.length > 0}/> Head-to-head finale</label><label><input type="checkbox" checked={timerEnabled} onChange={e => setTimerEnabled(e.target.checked)} disabled={restaurants.length > 0}/> Show timer</label><label><input type="checkbox" checked={soundEnabled} onChange={e => setSoundEnabled(e.target.checked)}/> Flip sounds</label></div></div></details>
+    </form>}
+    <section className="room-panel" aria-label="Multiplayer room"><div className="room-heading"><Friends/><div><h2>{roomRole === 'solo' ? 'Make it a group decision' : `Room ${roomCode}`}</h2><p>{roomRole === 'host' ? `You’re hosting with ${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}. Keep this tab open.` : roomRole === 'guest' ? 'Your answers go to the host. Everyone sees the same board.' : 'Make a room or join an existing one.'}</p></div></div>{roomRole === 'solo' ? <div className="room-actions room-actions-solo"><button className="create-room" onClick={createRoom}><span aria-hidden="true" className="action-symbol">+</span> Create a room</button>
+      <button type="button" className="join-toggle" aria-expanded={joinExpanded} aria-controls="join-room-form" onClick={() => setJoinExpanded(open => !open)}>
+        <span aria-hidden="true" className="join-icon"></span> Join a room
+      </button>
+      <form id="join-room-form" hidden={!joinExpanded} onSubmit={joinRoom}><input aria-label="Four-letter room code" maxLength={4} value={joinCode} onChange={event => setJoinCode(event.target.value.toUpperCase().replace(/[^A-Z]/g, ''))} placeholder="CODE"/><button type="submit">Join</button></form></div> : <div className="room-actions"><strong className="room-code">{roomCode}</strong><button onClick={leaveRoom}>Leave room</button></div>}{roomStatus && <p className="room-status" role="status">{roomStatus}</p>}{roomRole === 'host' && <div className="room-invite"><div className="invite-copy"><label htmlFor="invite-link">Invite link</label><input id="invite-link" readOnly value={roomInvite} onFocus={event => event.target.select()}/><div><button onClick={copyInvite}>Copy link</button><button onClick={shareInvite}>Share link</button></div>{localInvite && <p>Localhost links only work on this computer. Use a hosted app URL or your computer’s LAN address for another device.</p>}</div>{qrImage && <img src={qrImage} alt={`QR code to join room ${roomCode}`} width="160" height="160"/>}</div>}</section>
+    </div>
+    {!restaurants.length && <GamePreview/>}
+    {restaurants.length > 0 && <section className="game" ref={gameRef} tabIndex={-1} aria-label="Restaurant game board"><div className="game-top"><div><p className="eyebrow">{label} · {restaurants.length} {restaurants.length === 1 ? 'CARD' : 'CARDS'} DEALT</p><h2>{showResults ? 'Your finalists' : 'The board is shrinking'}</h2></div>{timerEnabled && <div className="timer" role="timer" aria-label="Round timer">{seconds === 0 && !finished ? 'OVERTIME' : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`}</div>}</div>
+      {!finished && question && <div className="prompt"><span>{showdown ? 'FINAL SHOWDOWN' : 'THE NEXT QUESTION'}</span><strong aria-live="polite" aria-atomic="true">{question.question}</strong>{(roomRole === 'guest' && votedKey === `${revision}:${question.key}` || roomRole === 'host' && votes.key === question.key && Object.hasOwn(votes.answers, 'host')) ? <p className="vote-wait" role="status">Vote in. Waiting for everyone else…</p> : <div><button onClick={() => answer(true)}>{showdown ? showdown.first.name : lastChance ? 'Yes, show me' : 'Yes, please'}</button><button onClick={() => answer(false)} className="secondary">{showdown ? showdown.second.name : lastChance ? 'Nope, none' : 'No thanks'}</button></div>}{roomRole !== 'solo' && <small className="prompt-note">{roomRole === 'host' ? Object.keys(votes.key === question.key ? votes.answers : {}).length : (votes.answers.count || 0)} of {guestCount + 1} votes received{roomRole === 'host' ? ' - ties count as no' : ''}</small>}{roomRole !== 'guest' && <div><button type="button" className="secondary" onClick={skipQuestion}>Skip</button><button type="button" className="secondary" disabled={!history.length} onClick={undo}>Undo</button>{roomRole === 'host' && votes.key === question.key && Object.keys(votes.answers).length > 0 && <button type="button" className="secondary" onClick={() => { resolveAnswer(groupAnswer(votes.answers)); setVotes({ key: '', answers: {} }); }}>Use votes so far</button>}</div>}{question.key.startsWith('diet:') && <small className="prompt-note">Listed options do not confirm allergen safety. Check with the restaurant.</small>}{question.key === 'price' && <small className="prompt-note">Price tags are estimates and may be outdated.</small>}</div>}
       {showResults && <div className="final-results" ref={resultsRef} tabIndex={-1}><div className="results-heading"><div><p className="eyebrow">THE REVEAL · {finalists.length} OPTIONS</p><h3>{finalists.length ? 'Places that made the cut' : 'You won the pickiest eater award! \u{1F3C6}'}</h3><p>{finalists.length ? 'Closest first. No more questions could be generated from the available restaurant data; some places may have incomplete tags.' : 'The deck has spoken. Try another round with a wider radius or a few more yeses.'}</p></div><div className="result-actions">{history.length > 0 && roomRole !== 'guest' && <button className="play-again" onClick={undo}>Undo last answer</button>}{finalists.length > 0 && <button className="play-again" onClick={shareResults}>Share results</button>}{finalists.length > 0 && roomRole !== 'guest' && <button className="play-again" onClick={() => setEliminated(new Set(restaurants.map(r => r.id)))}>None of these</button>}{roomRole !== 'guest' && <button className="play-again" onClick={reset}>Play again</button>}</div>{shareStatus && <p role="status" className="share-status">{shareStatus}</p>}</div>{finalists.length > 0 && <div className="final-list">{finalists.map((r, index) => <Finalist key={r.id} restaurant={r} rank={index + 1} history={history} />)}</div>}</div>}
       {!showResults && <RestaurantBoard restaurants={restaurants} eliminated={eliminated} dimmed={dimmed} />}
 
       <p className="source">Restaurant data © OpenStreetMap contributors. Tags may be incomplete; check hours and details before heading out.</p>
     </section>}
-  </main>;
+    </main>
+  </div>;
 }
 function RestaurantBoard({ restaurants, eliminated, dimmed }) {
   const [orderedEliminated, setOrderedEliminated] = useState(() => new Set(eliminated));
@@ -301,7 +344,7 @@ function RestaurantBoard({ restaurants, eliminated, dimmed }) {
     }
     positionsRef.current = null;
   }, [orderedEliminated]);
-  return <div className="board" ref={boardRef}>{cards.map(({ restaurant: r, index }) => <article data-id={r.id} key={r.id} className={`card ${eliminated.has(r.id) ? 'flipped' : ''} ${dimmed.has(r.id) ? 'dimmed' : ''}`}><div className="card-inner"><div className="card-front"><span className="card-number">#{String(index + 1).padStart(2, '0')}</span><div className="food-icon">{icon(r.tags)}</div><h3>{r.name}</h3><p>{description(r.tags)} ? {r.distance.toFixed(1)} mi</p></div><div className="card-back">?<span>FLIPPED</span></div></div></article>)}</div>;
+  return <div className="board" ref={boardRef}>{cards.map(({ restaurant: r, index }) => <article aria-label={eliminated.has(r.id) ? `${r.name}, eliminated` : undefined} data-id={r.id} key={r.id} className={`card ${eliminated.has(r.id) ? 'flipped' : ''} ${dimmed.has(r.id) ? 'dimmed' : ''}`}><div className="card-inner"><div className="card-front" aria-hidden={eliminated.has(r.id)}><span className="card-number">#{String(index + 1).padStart(2, '0')}</span><div className="food-icon" aria-hidden="true">{icon(r.tags)}</div><h3>{r.name}</h3><p>{description(r.tags)} · {r.distance.toFixed(1)} mi</p></div><div className="card-back" aria-hidden="true">×<span>FLIPPED</span></div></div></article>)}</div>;
 }
 function icon(tags) { const value = tags.cuisine || tags.amenity || ''; if (/pizza|italian/.test(value)) return '🍕'; if (/burger|fast_food/.test(value)) return '🍔'; if (/coffee|cafe/.test(value)) return '☕'; if (/sushi|japanese/.test(value)) return '🍣'; if (/mexican|taco/.test(value)) return '🌮'; return '🍽️'; }
 function description(tags) { return (tags.cuisine || tags.amenity || 'Food').split(/[;,]/)[0].replaceAll('_', ' '); }
