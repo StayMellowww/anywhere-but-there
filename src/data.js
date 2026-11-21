@@ -1,9 +1,12 @@
-const GLOBAL_OVERPASS = 'https://overpass.private.coffee/api/interpreter';
+const GLOBAL_OVERPASS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
 
 export function overpassEndpoints(lat, lon) {
-  if (lat >= 7 && lat <= 84 && lon >= -169 && lon <= -50) return ['https://ovp.dresel.systems/api-na/interpreter', GLOBAL_OVERPASS];
-  if (lat >= 34 && lat <= 72 && lon >= -12 && lon <= 45) return ['https://ovp.dresel.systems/api/interpreter', GLOBAL_OVERPASS];
-  return [GLOBAL_OVERPASS];
+  if (lat >= 25 && lat <= 84 && lon >= -169 && lon <= -50) return ['https://ovp.dresel.systems/api-na/interpreter', ...GLOBAL_OVERPASS];
+  if (lat >= 34 && lat <= 72 && lon >= -12 && lon <= 45) return ['https://ovp.dresel.systems/api/interpreter', ...GLOBAL_OVERPASS];
+  return GLOBAL_OVERPASS;
 }
 
 export function overpassQuery(lat, lon, radiusMeters) {
@@ -41,23 +44,27 @@ export async function findPlace(query, signal) {
 }
 
 export async function findRestaurants(lat, lon, radiusMeters, signal) {
-  let json;
+  let foundEmpty = false;
   let lastError;
   for (const endpoint of overpassEndpoints(lat, lon)) {
     try {
-      json = await requestJson(endpoint, {
+      const json = await requestJson(endpoint, {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
         body: new URLSearchParams({ data: overpassQuery(lat, lon, radiusMeters) }),
       }, 18000, 'Restaurant search');
-      break;
+      if (!Array.isArray(json.elements)) throw new Error('Restaurant search returned an invalid response. Try again.');
+      const cards = restaurantCards(json.elements, lat, lon);
+      if (cards.length) return cards;
+      foundEmpty = true;
     } catch (error) {
       if (signal?.aborted) throw error;
       lastError = error;
     }
   }
-  if (!json) throw lastError;
-  return restaurantCards(json.elements || [], lat, lon);
+  if (lastError) throw lastError;
+  if (foundEmpty) return [];
+  throw new Error('Restaurant search is unavailable. Try again.');
 }
 
 export function restaurantCards(elements, lat, lon) {
