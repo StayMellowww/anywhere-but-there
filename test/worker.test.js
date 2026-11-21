@@ -28,3 +28,21 @@ test('room closes excessive messages and guests when host leaves', async () => {
   await room.webSocketClose(host, 1000);
   assert.equal(guest.closed, 1000);
 });
+test('place search validates coordinates and keeps the API key upstream', async () => {
+  const app = (await import('../worker/index.js')).default;
+  const env = { GEOAPIFY_API_KEY: 'test-secret' };
+  assert.equal((await app.fetch(new Request('https://example.com/api/places?lat=91&lon=0&radius=1000'), env)).status, 400);
+  const originalFetch = globalThis.fetch;
+  let upstream;
+  globalThis.fetch = async url => {
+    upstream = new URL(url);
+    return Response.json({ features: [] });
+  };
+  try {
+    const response = await app.fetch(new Request('https://example.com/api/places?lat=13.69&lon=-89.19&radius=3219'), env);
+    assert.equal(response.status, 200);
+    assert.equal(upstream.searchParams.get('apiKey'), 'test-secret');
+    assert.equal(upstream.searchParams.get('filter'), 'circle:-89.19,13.69,3219');
+    assert.equal((await response.text()).includes('test-secret'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});

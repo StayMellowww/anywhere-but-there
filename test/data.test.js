@@ -23,7 +23,8 @@ test('an empty regional response falls back to global restaurant data', async ()
   const requests = [];
   globalThis.fetch = async url => {
     requests.push(url);
-    const elements = requests.length === 1 ? [] : [
+    if (requests.length === 1) return new Response('', { status: 503 });
+    const elements = requests.length === 2 ? [] : [
       { type: 'node', id: 1, lat: 40, lon: -74, tags: { name: 'Cafe', amenity: 'cafe' } }
     ];
     return new Response(JSON.stringify({ elements }), { status: 200 });
@@ -31,8 +32,23 @@ test('an empty regional response falls back to global restaurant data', async ()
   try {
     const cards = await findRestaurants(40, -74, 3219);
     assert.equal(cards[0].name, 'Cafe');
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+test('Geoapify results preserve game data and distances', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ features: [{ properties: {
+    place_id: 'example', name: 'Example Cafe', lat: 40.001, lon: -74,
+    categories: ['catering.cafe', 'catering.cafe.coffee'], street: 'Main Street', housenumber: '12',
+  } }] });
+  try {
+    const [card] = await findRestaurants(40, -74, 3219);
+    assert.equal(card.name, 'Example Cafe');
+    assert.equal(card.tags.amenity, 'cafe');
+    assert.equal(card.tags['addr:street'], 'Main Street');
+    assert.equal(card.source, 'geoapify');
+    assert.ok(card.distance > 0);
+  } finally { globalThis.fetch = originalFetch; }
 });

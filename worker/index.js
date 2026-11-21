@@ -5,6 +5,7 @@ const MAX_ROOM_MS = 60 * 60 * 1000;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/places') return searchPlaces(request, env);
     const match = url.pathname.match(/^\/api\/rooms\/([A-Z]{4})$/);
     if (!match) return env.ASSETS.fetch(request);
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket required', { status: 426 });
@@ -13,6 +14,36 @@ export default {
     return env.ROOMS.get(env.ROOMS.idFromName(match[1])).fetch(request);
   },
 };
+
+async function searchPlaces(request, env) {
+  if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+  if (!env.GEOAPIFY_API_KEY) return new Response('Place search unavailable', { status: 503 });
+  const params = new URL(request.url).searchParams;
+  const lat = Number(params.get('lat'));
+  const lon = Number(params.get('lon'));
+  const radius = Number(params.get('radius'));
+  if (!params.has('lat') || !params.has('lon') || !params.has('radius') ||
+      !Number.isFinite(lat) || lat < -90 || lat > 90 ||
+      !Number.isFinite(lon) || lon < -180 || lon > 180 ||
+      !Number.isFinite(radius) || radius < 500 || radius > 16094) {
+    return new Response('Invalid search parameters', { status: 400 });
+  }
+  const url = new URL('https://api.geoapify.com/v2/places');
+  url.search = new URLSearchParams({
+    categories: 'catering.restaurant,catering.cafe,catering.fast_food,catering.food_court',
+    conditions: 'named', filter: `circle:${lon},${lat},${Math.round(radius)}`,
+    bias: `proximity:${lon},${lat}`, limit: '100', apiKey: env.GEOAPIFY_API_KEY,
+  });
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!response.ok) return new Response('Place search unavailable', { status: 502 });
+    const data = await response.json();
+    if (!Array.isArray(data.features)) return new Response('Invalid place data', { status: 502 });
+    return Response.json({ features: data.features }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch {
+    return new Response('Place search unavailable', { status: 502 });
+  }
+}
 
 export class Room {
   constructor(ctx) { this.ctx = ctx; }

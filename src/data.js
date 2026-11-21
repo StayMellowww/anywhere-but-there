@@ -44,6 +44,28 @@ export async function findPlace(query, signal) {
 }
 
 export async function findRestaurants(lat, lon, radiusMeters, signal) {
+  try {
+    const params = new URLSearchParams({ lat, lon, radius: Math.min(16094, Math.max(500, Math.round(radiusMeters))) });
+    const data = await requestJson(`/api/places?${params}`, { signal }, 14000, 'Restaurant search');
+    if (!Array.isArray(data.features)) throw new Error('Invalid place data');
+    const elements = data.features.map(({ properties: place = {} }) => {
+      const categories = place.categories || [];
+      const amenity = ['fast_food', 'food_court', 'cafe', 'restaurant'].find(type => categories.includes(`catering.${type}`));
+      const cuisine = categories.filter(category => amenity && category.startsWith(`catering.${amenity}.`))
+        .map(category => category.split('.').at(-1)).join(';');
+      return {
+        type: 'geoapify', id: place.place_id, lat: place.lat, lon: place.lon,
+        tags: { ...(place.datasource?.raw || {}), name: place.name, ...(amenity && { amenity }), ...(cuisine && { cuisine }),
+          ...(place.housenumber && { 'addr:housenumber': place.housenumber }),
+          ...(place.street && { 'addr:street': place.street }), ...(place.city && { 'addr:city': place.city }),
+          ...(place.website && { website: place.website }), ...(place.opening_hours && { opening_hours: place.opening_hours }) },
+      };
+    }).filter(element => element.id);
+    const cards = restaurantCards(elements, lat, lon).map(card => ({ ...card, source: 'geoapify' }));
+    if (cards.length) return cards;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+  }
   let foundEmpty = false;
   let lastError;
   for (const endpoint of overpassEndpoints(lat, lon)) {
