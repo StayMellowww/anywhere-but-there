@@ -60,18 +60,16 @@ function PreviewCard({ name, photo, hidden, number }) {
 export function GamePreview() {
   return <section className="preview" aria-label="How the game works">
     <div className="preview-heading">
-      <h2><svg viewBox="0 0 32 20" aria-hidden="true"><path fill="currentColor" d="M6 2h20v2h3v4h2v9h-2v2h-4l-5-5h-8l-5 5H3v-2H1V8h2V4h3z"/><path stroke="#1b1739" strokeWidth="2" d="M5 8h8M9 4v8m12-5h3m0 4h3"/></svg>The game</h2>
+      <h2><svg viewBox="0 0 32 20" aria-hidden="true"><path fill="currentColor" d="M6 2h20v2h3v4h2v9h-2v2h-4l-5-5h-8l-5 5H3v-2H1V8h2V4h3z"/><path stroke="#1b1739" strokeWidth="2" d="M5 8h8M9 4v8m12-5h3m0 4h3"/></svg>Example game</h2>
       <ol role="list"><li>Find nearby spots</li><li>Answer questions to flip cards</li><li>Choose from the finalists</li></ol>
     </div>
     <div className="preview-body">
       <div className="round"><span className="round-ticket"><strong>Round 1</strong><Burst/></span>
         <p>Select any card to flip it over.</p>
-        <div className="mascot-arrow"><img src="/fries.webp" alt=""/><svg viewBox="0 0 80 50" aria-hidden="true"><path d="M4 28Q32 62 71 9m-17 5 18-7-1 17"/></svg></div>
       </div>
       <div className="samples">
         {samples.map((sample, i) => <PreviewCard key={sample.name} {...sample} number={i+1}/>)}
       </div>
-      <img className="drink" src="/drink.webp" alt=""/>
     </div>
     <a className="preview-return" href="#top">Back to top</a>
   </section>;

@@ -14,7 +14,7 @@ export function NightSky({ paused }) {
     </svg>
     {[0,1,2,3,4,5].map(i => <svg key={i} className={'cloud cloud-'+i} viewBox="0 0 90 24"><path fill="#241b56" d="M0 23v-5h7v-5h10V9h8V4h8V1h14v4h7v6h7V8h11v4h8v6h10v5Z"/><path fill="#48346e" opacity=".42" d="M17 13V9h8V4h8V1h14v3H34v3h-7v5h-8v3Z"/></svg>)}
     {stars.map(([x,y], i) => <svg key={x} className="sky-star" style={{left:x+'%',top:y+'%',color:['#fff','#64f4c8','#ffe169'][i%3],width:4+i%5,animationDuration:(2+i%3)+'s',animationDelay:-i*.43+'s'}} viewBox="0 0 10 10"><path fill="currentColor" d="M4 0h2v3h1v1h3v2H7v1H6v3H4V7H3V6H0V4h3V3h1Z"/></svg>)}
-    <div className="diner"><img src="/diner.webp" alt=""/><i/></div>
+    <div className="neon-sign"><span>OPEN</span><small>24 / 7</small></div>
   </div>;
 }
 
